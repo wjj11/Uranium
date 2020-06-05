@@ -17,20 +17,23 @@ from UM.Signal import Signal
 if TYPE_CHECKING:
     from UM.Mesh.MeshData import MeshData
 
-##  A SceneNode subclass that provides a camera object.
-#
-#   The camera provides a projection matrix and its transformation matrix
-#   can be used as view matrix.
+
 class Camera(SceneNode.SceneNode):
+    """A SceneNode subclass that provides a camera object.
+
+    The camera provides a projection matrix and its transformation matrix
+    can be used as view matrix.
+    """
+
     class PerspectiveMode(enum.Enum):
         PERSPECTIVE = "perspective"
         ORTHOGRAPHIC = "orthographic"
 
     @staticmethod
-    def getDefaultZoomFactor():
+    def getDefaultZoomFactor() -> float:
         return -0.3334
 
-    def __init__(self, name: str = "", parent: SceneNode.SceneNode = None) -> None:
+    def __init__(self, name: str = "", parent: Optional[SceneNode.SceneNode] = None) -> None:
         super().__init__(parent)
         self._name = name  # type: str
         self._projection_matrix = Matrix()  # type: Matrix
@@ -43,7 +46,8 @@ class Camera(SceneNode.SceneNode):
         self._auto_adjust_view_port_size = True  # type: bool
         self.setCalculateBoundingBox(False)
         self._cached_view_projection_matrix = None  # type: Optional[Matrix]
-
+        self._camera_light_position = None
+        self._cached_inversed_world_transformation = None
         self._zoom_factor = Camera.getDefaultZoomFactor()
 
         from UM.Application import Application
@@ -79,27 +83,28 @@ class Camera(SceneNode.SceneNode):
     def setAutoAdjustViewPort(self, auto_adjust: bool) -> None:
         self._auto_adjust_view_port_size = auto_adjust
 
-    ##  Get the projection matrix of this camera.
     def getProjectionMatrix(self) -> Matrix:
+        """Get the projection matrix of this camera."""
+
         return self._projection_matrix
-    
+
     def getViewportWidth(self) -> int:
         return self._viewport_width
-    
+
     def setViewportWidth(self, width: int) -> None:
         self._viewport_width = width
         self._updatePerspectiveMatrix()
-    
+
     def setViewportHeight(self, height: int) -> None:
         self._viewport_height = height
         self._updatePerspectiveMatrix()
-        
+
     def setViewportSize(self, width: int, height: int) -> None:
         self._viewport_width = width
         self._viewport_height = height
         self._updatePerspectiveMatrix()
 
-    def _updatePerspectiveMatrix(self):
+    def _updatePerspectiveMatrix(self) -> None:
         view_width = self._viewport_width
         view_height = self._viewport_height
         projection_matrix = Matrix()
@@ -117,17 +122,19 @@ class Camera(SceneNode.SceneNode):
         self.setProjectionMatrix(projection_matrix)
         self.perspectiveChanged.emit(self)
 
-    def getViewProjectionMatrix(self):
+    def getViewProjectionMatrix(self) -> Matrix:
         if self._cached_view_projection_matrix is None:
             inverted_transformation = self.getWorldTransformation()
             inverted_transformation.invert()
             self._cached_view_projection_matrix = self._projection_matrix.multiply(inverted_transformation, copy = True)
         return self._cached_view_projection_matrix
 
-    def _updateWorldTransformation(self):
+    def _updateWorldTransformation(self) -> None:
         self._cached_view_projection_matrix = None
+        self._cached_inversed_world_transformation = None
+        self._camera_light_position = None
         super()._updateWorldTransformation()
-    
+
     def getViewportHeight(self) -> int:
         return self._viewport_height
 
@@ -141,12 +148,25 @@ class Camera(SceneNode.SceneNode):
     def render(self, renderer) -> bool:
         # It's a camera. It doesn't need rendering.
         return True
-    
-    ##  Set the projection matrix of this camera.
-    #   \param matrix The projection matrix to use for this camera.
+
     def setProjectionMatrix(self, matrix: Matrix) -> None:
+        """Set the projection matrix of this camera.
+        :param matrix: The projection matrix to use for this camera.
+        """
+
         self._projection_matrix = matrix
         self._cached_view_projection_matrix = None
+
+    def getInverseWorldTransformation(self):
+        if self._cached_inversed_world_transformation is None:
+            self._cached_inversed_world_transformation = self.getWorldTransformation()
+            self._cached_inversed_world_transformation.invert()
+        return self._cached_inversed_world_transformation
+
+    def getCameraLightPosition(self):
+        if self._camera_light_position is None:
+            self._camera_light_position = self.getWorldPosition() + Vector(0, 50, 0)
+        return self._camera_light_position
 
     def isPerspective(self) -> bool:
         return self._perspective
@@ -158,18 +178,20 @@ class Camera(SceneNode.SceneNode):
 
     perspectiveChanged = Signal()
 
-    ##  Get a ray from the camera into the world.
-    #
-    #   This will create a ray from the camera's origin, passing through (x, y)
-    #   on the near plane and continuing based on the projection matrix.
-    #
-    #   \param x The X coordinate on the near plane this ray should pass through.
-    #   \param y The Y coordinate on the near plane this ray should pass through.
-    #
-    #   \return A Ray object representing a ray from the camera origin through X, Y.
-    #
-    #   \note The near-plane coordinates should be in normalized form, that is within (-1, 1).
     def getRay(self, x: float, y: float) -> Ray:
+        """Get a ray from the camera into the world.
+
+        This will create a ray from the camera's origin, passing through (x, y)
+        on the near plane and continuing based on the projection matrix.
+
+        :param x: The X coordinate on the near plane this ray should pass through.
+        :param y: The Y coordinate on the near plane this ray should pass through.
+
+        :return: A Ray object representing a ray from the camera origin through X, Y.
+
+        :note The near-plane coordinates should be in normalized form, that is within (-1, 1).
+        """
+
         window_x = ((x + 1) / 2) * self._window_width
         window_y = ((y + 1) / 2) * self._window_height
         view_x = (window_x / self._viewport_width) * 2 - 1
@@ -206,8 +228,9 @@ class Camera(SceneNode.SceneNode):
 
         return Ray(origin, Vector(direction[0], direction[1], direction[2]))
 
-    ##  Project a 3D position onto the 2D view plane.
     def project(self, position: Vector) -> Tuple[float, float]:
+        """Project a 3D position onto the 2D view plane."""
+
         projection = self._projection_matrix
         view = self.getWorldTransformation()
         view.invert()
@@ -216,8 +239,9 @@ class Camera(SceneNode.SceneNode):
         position = position.preMultiply(projection)
         return position.x / position.z / 2.0, position.y / position.z / 2.0
 
-    ##  Updates the _perspective field if the preference was modified.
-    def _preferencesChanged(self, key):
+    def _preferencesChanged(self, key: str) -> None:
+        """Updates the _perspective field if the preference was modified."""
+
         if key != "general/camera_perspective_mode":  # Only listen to camera_perspective_mode.
             return
         from UM.Application import Application

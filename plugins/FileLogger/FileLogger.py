@@ -1,12 +1,13 @@
 # Copyright (c) 2015 Ultimaker B.V.
 # Uranium is released under the terms of the LGPLv3 or higher.
 
+import logging
+import logging.handlers
+from typing import Set
+
 from UM.Logger import LogOutput
 from UM.Resources import Resources
 from UM.VersionUpgradeManager import VersionUpgradeManager
-from typing import Set
-
-import logging
 
 
 class FileLogger(LogOutput):
@@ -24,17 +25,21 @@ class FileLogger(LogOutput):
 
     def setFileName(self, file_name: str) -> None:
         if ".log" in file_name:
-            file_handler = logging.FileHandler(file_name, encoding = "utf-8")
+            file_handler = logging.handlers.RotatingFileHandler(file_name, encoding = "utf-8",
+                                                                maxBytes = 5 * 1024 * 1024,
+                                                                backupCount = 1)
             format_handler = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
             file_handler.setFormatter(format_handler)
             self._logger.addHandler(file_handler)
         else:
             pass  # TODO, add handling
-    
-    ##  Log message to file. 
-    #   \param log_type "e" (error), "i"(info), "d"(debug), "w"(warning) or "c"(critical) (can postfix with "_once")
-    #   \param message String containing message to be logged
+
     def log(self, log_type: str, message: str) -> None:
+        """Log message to file. 
+
+        :param log_type: "e" (error), "i"(info), "d"(debug), "w"(warning) or "c"(critical) (can postfix with "_once")
+        :param message: String containing message to be logged
+        """
         if log_type == "w":  # Warning
             self._logger.warning(message)
         elif log_type == "i":  # Info

@@ -13,15 +13,17 @@ from UM.i18n import i18nCatalog
 i18n_catalog = i18nCatalog("uranium")
 
 
-##  A Job subclass that performs mesh loading.
-#
-#   The result of this Job is a MeshData object.
 class ReadMeshJob(ReadFileJob):
-    def __init__(self, filename):
+    """A Job subclass that performs mesh loading.
+
+    The result of this Job is a MeshData object.
+    """
+
+    def __init__(self, filename: str) -> None:
         super().__init__(filename)
-        from UM.Application import Application
-        self._application = Application.getInstance()
-        self._handler = Application.getInstance().getMeshFileHandler()
+        from UM.Qt.QtApplication import QtApplication
+        self._application = QtApplication.getInstance()
+        self._handler = QtApplication.getInstance().getMeshFileHandler()
 
     def run(self):
         super().run()

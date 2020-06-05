@@ -3,8 +3,9 @@
 from UM.PluginObject import PluginObject
 
 
-##  Base class for writer objects
 class FileWriter(PluginObject):
+    """Base class for writer objects"""
+
     class OutputMode:
         TextMode = 1
         BinaryMode = 2
@@ -19,7 +20,7 @@ class FileWriter(PluginObject):
     def getAddToRecentFiles(self) -> bool:
         return self._add_to_recent_files
 
-    def write(self, stream, data):
+    def write(self, stream, data, mode = OutputMode.TextMode):
         raise NotImplementedError("Writer plugin was not correctly implemented, no write was specified")
 
     def setInformation(self, information_message: str):

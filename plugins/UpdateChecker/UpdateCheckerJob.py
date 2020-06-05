@@ -1,26 +1,27 @@
 # Copyright (c) 2018 Ultimaker B.V.
 # Uranium is released under the terms of the LGPLv3 or higher.
 
-from UM.Application import Application
-from UM.Message import Message
-from UM.Version import Version
-from UM.Logger import Logger
-from UM.Job import Job
-
+import codecs
+import json
+import platform
 import ssl
 import urllib.request
-import platform
-import json
-import codecs
 
 import certifi
 
+from UM.Application import Application
+from UM.Job import Job
+from UM.Logger import Logger
+from UM.Message import Message
+from UM.Version import Version
 from UM.i18n import i18nCatalog
+
 i18n_catalog = i18nCatalog("uranium")
 
 
-##  This job checks if there is an update available on the provided URL.
 class UpdateCheckerJob(Job):
+    """This job checks if there is an update available on the provided URL."""
+
     def __init__(self, silent = False, display_same_version = True, url = None, callback = None, set_download_url_callback = None):
         super().__init__()
         self.silent = silent
@@ -41,6 +42,7 @@ class UpdateCheckerJob(Job):
             headers = {"User-Agent": "%s - %s" % (application_name, Application.getInstance().getVersion())}
             # CURA-6698 Create an SSL context and use certifi CA certificates for verification.
             context = ssl.SSLContext(protocol = ssl.PROTOCOL_TLSv1_2)
+            context.verify_mode = ssl.CERT_REQUIRED
             context.load_verify_locations(cafile = certifi.where())
             request = urllib.request.Request(self._url, headers = headers)
             latest_version_file = urllib.request.urlopen(request, context = context)

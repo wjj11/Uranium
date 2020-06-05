@@ -80,7 +80,7 @@ class Theme(QObject):
                         with open(theme_file, encoding = "utf-8") as f:
                             try:
                                 data = json.load(f)
-                            except json.decoder.JSONDecodeError:
+                            except (UnicodeDecodeError, json.decoder.JSONDecodeError):
                                 Logger.log("w", "Could not parse theme %s", theme_id)
                                 continue # do not add this theme to the list, but continue looking for other themes
 
@@ -154,9 +154,17 @@ class Theme(QObject):
         if path == self._path:
             return
 
-        with open(os.path.join(path, "theme.json"), encoding = "utf-8") as f:
-            Logger.log("d", "Loading theme file: %s", os.path.join(path, "theme.json"))
-            data = json.load(f)
+        theme_full_path = os.path.join(path, "theme.json")
+        Logger.log("d", "Loading theme file: {theme_full_path}".format(theme_full_path = theme_full_path))
+        try:
+            with open(theme_full_path, encoding = "utf-8") as f:
+                data = json.load(f)
+        except EnvironmentError as e:
+            Logger.error("Unable to load theme file at {theme_full_path}: {err}".format(theme_full_path = theme_full_path, err = e))
+            return
+        except UnicodeDecodeError:
+            Logger.error("Theme file at {theme_full_path} is corrupt (invalid UTF-8 bytes).".format(theme_full_path = theme_full_path))
+            return
 
         # Iteratively load inherited themes
         try:
@@ -251,15 +259,16 @@ class Theme(QObject):
             "line": QSizeF(self._em_width, self._em_height)
         }
 
-    ##  Get the singleton instance for this class.
     @classmethod
-    def getInstance(cls, engine = None):
+    def getInstance(cls, engine = None) -> "Theme":
+        """Get the singleton instance for this class."""
+
         # Note: Explicit use of class name to prevent issues with inheritance.
         if Theme.__instance is None:
             Theme.__instance = cls(engine)
         return Theme.__instance
 
-    __instance = None   # type: 'Theme'
+    __instance = None   # type: "Theme"
 
 
 def createTheme(engine, script_engine = None):

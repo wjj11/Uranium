@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Ultimaker B.V.
+# Copyright (c) 2020 Ultimaker B.V.
 # Uranium is released under the terms of the LGPLv3 or higher.
 
 from . import SceneNode
@@ -12,11 +12,13 @@ from UM.Job import Job
 from UM.View.GL.OpenGL import OpenGL
 
 
-##  Platform is a special case of Scene node. It renders a specific model as the platform of the machine.
-#   A specialised class is used due to the differences in how it needs to rendered and the fact that a platform
-#   can have a Texture.
-#   It also handles the re-loading of the mesh when the active machine is changed.
 class Platform(SceneNode.SceneNode):
+    """Platform is a special case of Scene node. It renders a specific model as the platform of the machine.
+    A specialised class is used due to the differences in how it needs to rendered and the fact that a platform
+    can have a Texture.
+    It also handles the re-loading of the mesh when the active machine is changed.
+    """
+
     def __init__(self, parent):
         super().__init__(parent)
 
@@ -82,10 +84,13 @@ class Platform(SceneNode.SceneNode):
 
         self._texture = OpenGL.getInstance().createTexture()
 
-        container = self._global_container_stack.findContainer({"platform_texture":"*"})
+        container = self._global_container_stack.findContainer({"platform_texture": "*"})
         if container:
             texture_file = container.getMetaDataEntry("platform_texture")
-            self._texture.load(Resources.getPath(Resources.Images, texture_file))
+            try:
+                self._texture.load(Resources.getPath(Resources.Images, texture_file))
+            except FileNotFoundError:
+                Logger.log("w", "Unable to find platform texture [%s] as specified in the definition", texture_file)
         # Note: if no texture file is specified, a 1 x 1 pixel transparent image is created
         # by UM.GL.QtTexture to prevent rendering issues
 
@@ -100,6 +105,8 @@ class Platform(SceneNode.SceneNode):
             return
 
         node = job.getResult()
+        if isinstance(node, list):  # Some model readers return lists of models. Some (e.g. STL) return a list SOMETIMES but not always.
+            node = node[0]
         if node.getMeshData():
             self.setMeshData(node.getMeshData())
 
@@ -107,8 +114,9 @@ class Platform(SceneNode.SceneNode):
             Application.getInstance().callLater(self._updateTexture)
 
 
-##  Protected class that ensures that the mesh for the machine platform is loaded.
 class _LoadPlatformJob(Job):
+    """Protected class that ensures that the mesh for the machine platform is loaded."""
+
     def __init__(self, file_name):
         super().__init__()
         self._file_name = file_name

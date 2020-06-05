@@ -9,14 +9,16 @@ from UM.Math.Matrix import Matrix
 from UM.Qt.QtMouseDevice import QtMouseDevice
 from UM.Qt.QtKeyDevice import QtKeyDevice
 from UM.Application import Application
+from UM.Scene.Selection import Selection
 from UM.Signal import Signal, signalemitter
 from UM.Scene.Camera import Camera
 from typing import Optional
 
 
-##  QQuickWindow subclass that provides the main window.
 @signalemitter
 class MainWindow(QQuickWindow):
+    """QQuickWindow subclass that provides the main window."""
+
     def __init__(self, parent = None):
         super(MainWindow, self).__init__(parent)
 
@@ -40,6 +42,8 @@ class MainWindow(QQuickWindow):
         self._app.getController().addInputDevice(self._mouse_device)
         self._app.getController().addInputDevice(self._key_device)
         self._app.getController().getScene().sceneChanged.connect(self._onSceneChanged)
+        self._app.getController().activeViewChanged.connect(self._onActiveViewChanged)
+        Selection.selectionChanged.connect(self._onSceneChanged)
         self._preferences = Application.getInstance().getPreferences()
 
         self._preferences.addPreference("general/window_width", 1280)
@@ -54,6 +58,7 @@ class MainWindow(QQuickWindow):
             self._preferences.resetPreference("general/window_height")
             self._preferences.resetPreference("general/window_left")
             self._preferences.resetPreference("general/window_top")
+            self._preferences.resetPreference("general/window_state")
 
         # Restore window geometry
         self.setWidth(int(self._preferences.getValue("general/window_width")))
@@ -81,6 +86,8 @@ class MainWindow(QQuickWindow):
 
         Application.getInstance().setMainWindow(self)
         self._fullscreen = False
+
+        self._full_render_required = True
 
         self._allow_resize = True
 
@@ -224,26 +231,37 @@ class MainWindow(QQuickWindow):
     renderCompleted = Signal(type = Signal.Queued)
 
     def _render(self):
-        renderer = self._app.getRenderer()
-        view = self._app.getController().getActiveView()
+        if self._full_render_required:
+            renderer = self._app.getRenderer()
+            view = self._app.getController().getActiveView()
+            renderer.beginRendering()
+            view.beginRendering()
+            renderer.render()
+            view.endRendering()
+            renderer.endRendering()
+            self._full_render_required = False
+            self.renderCompleted.emit()
+        else:
+            self._app.getRenderer().reRenderLast()
 
-        renderer.beginRendering()
-        view.beginRendering()
-        renderer.render()
-        view.endRendering()
-        renderer.endRendering()
-        self.renderCompleted.emit()
+    def _onSceneChanged(self, object = None):
+        self._full_render_required = True
+        self.update()
 
-    def _onSceneChanged(self, object):
+    def _onActiveViewChanged(self):
+        self._full_render_required = True
         self.update()
 
     @pyqtSlot()
     def _onWindowGeometryChanged(self):
-        self._preferences.setValue("general/window_width", self.width())
-        self._preferences.setValue("general/window_height", self.height())
-        self._preferences.setValue("general/window_left", self.x())
-        self._preferences.setValue("general/window_top", self.y())
-        # This is a workaround for QTBUG-30085
+        # Do not store maximised window geometry, but store state instead
+        # Using windowState instead of isMaximized is a workaround for QTBUG-30085
+        if self.windowState() == Qt.WindowNoState:
+            self._preferences.setValue("general/window_width", self.width())
+            self._preferences.setValue("general/window_height", self.height())
+            self._preferences.setValue("general/window_left", self.x())
+            self._preferences.setValue("general/window_top", self.y())
+
         if self.windowState() in (Qt.WindowNoState, Qt.WindowMaximized):
             self._preferences.setValue("general/window_state", self.windowState())
 

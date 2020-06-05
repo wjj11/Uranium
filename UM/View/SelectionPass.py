@@ -1,8 +1,9 @@
-# Copyright (c) 2019 Ultimaker B.V.
+# Copyright (c) 2020 Ultimaker B.V.
 # Uranium is released under the terms of the LGPLv3 or higher.
 
 import enum
 import random
+from typing import TYPE_CHECKING
 
 from UM.Resources import Resources
 from UM.Application import Application
@@ -17,14 +18,17 @@ from UM.View.RenderPass import RenderPass
 from UM.View.RenderBatch import RenderBatch
 from UM.View.GL.OpenGL import OpenGL
 
+if TYPE_CHECKING:
+    from UM.Scene.SceneNode import SceneNode
 
-##  A RenderPass subclass responsible for rendering selectable objects to a texture.
-#
-#   This pass performs the rendering of selectable objects to a texture that can be
-#   sampled to retrieve the actual object that was underneath the mouse cursor. Additionally,
-#   information about what objects are actually selected is rendered into the alpha channel
-#   of this render pass so it can be used later on in the composite pass.
 class SelectionPass(RenderPass):
+    """A RenderPass subclass responsible for rendering selectable objects to a texture.
+
+    This pass performs the rendering of selectable objects to a texture that can be
+    sampled to retrieve the actual object that was underneath the mouse cursor. Additionally,
+    information about what objects are actually selected is rendered into the alpha channel
+    of this render pass so it can be used later on in the composite pass.
+    """
     class SelectionMode(enum.Enum):
         OBJECTS = "objects"
         FACES = "faces"
@@ -41,7 +45,7 @@ class SelectionPass(RenderPass):
         self._renderer = Application.getInstance().getRenderer()
 
         self._selection_map = {}
-        self._toolhandle_selection_map = {
+        self._default_toolhandle_selection_map = {
             self._dropAlpha(ToolHandle.DisabledSelectionColor): ToolHandle.NoAxis,
             self._dropAlpha(ToolHandle.XAxisSelectionColor): ToolHandle.XAxis,
             self._dropAlpha(ToolHandle.YAxisSelectionColor): ToolHandle.YAxis,
@@ -53,17 +57,34 @@ class SelectionPass(RenderPass):
             ToolHandle.ZAxisSelectionColor: ToolHandle.ZAxis,
             ToolHandle.AllAxisSelectionColor: ToolHandle.AllAxis
         }
+        self._toolhandle_selection_map = {}
+        Application.getInstance().getController().activeToolChanged.connect(self._onActiveToolChanged)
+        self._onActiveToolChanged()
 
         self._mode = SelectionPass.SelectionMode.OBJECTS
         Selection.selectedFaceChanged.connect(self._onSelectedFaceChanged)
 
         self._output = None
 
+    def _onActiveToolChanged(self):
+        self._toolhandle_selection_map = self._default_toolhandle_selection_map.copy()
+
+        active_tool = Application.getInstance().getController().getActiveTool()
+        if not active_tool:
+            return
+
+        tool_handle = active_tool.getHandle()
+        if not tool_handle:
+            return
+        for name, color in tool_handle.getExtraWidgetsColorMap().items():
+            self._toolhandle_selection_map[color] = name
+            self._toolhandle_selection_map[self._dropAlpha(color)] = name
+
     def _onSelectedFaceChanged(self):
         self._mode = SelectionPass.SelectionMode.FACES if Selection.getFaceSelectMode() else SelectionPass.SelectionMode.OBJECTS
 
-    ##  Perform the actual rendering.
     def render(self):
+        """Perform the actual rendering."""
         if self._mode == SelectionPass.SelectionMode.OBJECTS:
             self._renderObjectsMode()
         elif self._mode == SelectionPass.SelectionMode.FACES:
@@ -116,8 +137,8 @@ class SelectionPass(RenderPass):
 
         self.release()
 
-    ##  Get the object id at a certain pixel coordinate.
     def getIdAtPosition(self, x, y):
+        """Get the object id at a certain pixel coordinate."""
         output = self.getOutput()
 
         window_size = self._renderer.getWindowSize()
@@ -131,8 +152,8 @@ class SelectionPass(RenderPass):
         pixel = output.pixel(px, py)
         return self._selection_map.get(Color.fromARGB(pixel), None)
 
-    ## Get an unique identifier to the face of the polygon at a certain pixel-coordinate.
     def getFaceIdAtPosition(self, x, y):
+        """Get an unique identifier to the face of the polygon at a certain pixel-coordinate."""
         output = self.getOutput()
 
         window_size = self._renderer.getWindowSize()
@@ -170,14 +191,20 @@ class SelectionPass(RenderPass):
     def _dropAlpha(self, color):
         return Color(color.r, color.g, color.b, 0.0)
 
-    ##  Get the top root group for a node
-    #
-    #   \param node type(SceneNode)
-    #   \return group type(SceneNode)
-    def _isInSelectedGroup(self, node):
+    def _isInSelectedGroup(self, node: "SceneNode") -> bool:
+        """
+        Get whether the given node is in a group that is selected.
+        :param node: The node to check.
+        :return: ``True`` if the node is in a selected group, or ``False`` if
+        it's not.
+        """
         group_node = node.getParent()
+        if group_node is None:  # Separate node that's not in the scene.
+            return False  # Can never get selected.
         while group_node.callDecoration("isGroup"):
             if Selection.isSelected(group_node):
                 return True
             group_node = group_node.getParent()
+            if group_node is None:
+                return False
         return False
