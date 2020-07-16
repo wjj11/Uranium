@@ -10,6 +10,7 @@ from typing import Any, cast, Dict, List, Optional, Set, Tuple
 from PyQt5.QtCore import QObject, pyqtProperty, pyqtSignal
 from PyQt5.QtQml import QQmlEngine #To take ownership of this class ourselves.
 
+from UM.FastConfigParser import FastConfigParser
 from UM.Trust import Trust
 from UM.Decorators import override
 from UM.Settings.Interfaces import DefinitionContainerInterface
@@ -21,7 +22,7 @@ from UM.MimeTypeDatabase import MimeTypeDatabase, MimeType
 
 from UM.Settings.Interfaces import ContainerInterface, ContainerRegistryInterface
 from UM.Settings.SettingInstance import SettingInstance
-
+import re
 
 class InvalidInstanceError(Exception):
     pass
@@ -49,6 +50,9 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
     """A container for SettingInstance objects."""
 
     Version = 4
+    version_regex = re.compile("\nversion ?= ?(\d+)")
+    setting_version_regex = re.compile("\nsetting_version ?= ?(\d+)")
+    type_regex = re.compile("\ntype ?= ?(\w+)")
 
     def __init__(self, container_id: str, parent: QObject = None, *args: Any, **kwargs: Any) -> None:
         """Constructor
@@ -480,11 +484,10 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
         return stream.getvalue()
 
     @classmethod
-    def _readAndValidateSerialized(cls, serialized: str) -> configparser.ConfigParser:
+    def _readAndValidateSerialized(cls, serialized: str) -> FastConfigParser:
         # Disable comments in the ini files, so text values can start with a ;
         # without being removed as a comment
-        parser = configparser.ConfigParser(interpolation = None, comment_prefixes = ())
-        parser.read_string(serialized)
+        parser = FastConfigParser(serialized)
 
         has_general = "general" in parser
         has_version = has_general and "version" in parser["general"]
@@ -503,32 +506,36 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
 
     @classmethod
     def getConfigurationTypeFromSerialized(cls, serialized: str) -> Optional[str]:
-        configuration_type = None
-        try:
-            parser = cls._readAndValidateSerialized(serialized)
-            configuration_type = parser["metadata"].get("type")
-        except InvalidInstanceError as iie:
-            raise iie
-        except Exception as e:
-            Logger.log("d", "Could not get configuration type: %s", e)
+        regex_result = cls.type_regex.search(serialized)
+        configuration_type = ""
+        if regex_result is not None:
+            configuration_type = str(regex_result.groups()[-1])
+
         return configuration_type
 
     @classmethod
-    def getVersionFromSerialized(cls, serialized: str) -> Optional[int]:
-        configuration_type = cls.getConfigurationTypeFromSerialized(serialized)
-        if configuration_type is None:
-            Logger.log("w", "Could not determine configuration type.")
-            return None
-        # get version
-        version = None
-        try:
-            import UM.VersionUpgradeManager
-            version = UM.VersionUpgradeManager.VersionUpgradeManager.getInstance().getFileVersion(configuration_type,
-                                                                                                  serialized)
-        except Exception as e:
-            #Logger.log("d", "Could not get version from serialized: %s", e)
-            pass
-        return version
+    def getVersionFromSerialized(cls, serialised: str) -> int:
+        """
+        Gets the version number from a config file.
+
+        In all config files that concern this version upgrade, the version number is stored in general/version, so get
+        the data from that key.
+
+        :param serialised: The contents of a config file.
+        :return: The version number of that config file.
+        """
+        format_version = 1
+        setting_version = 0
+
+        regex_result = cls.version_regex.search(serialised)
+        if regex_result is not None:
+            format_version = int(regex_result.groups()[-1])
+
+        regex_result = cls.setting_version_regex.search(serialised)
+        if regex_result is not None:
+            setting_version = int(regex_result.groups()[-1])
+
+        return format_version * 1000000 + setting_version
 
     @override(ContainerInterface)
     def _trustHook(self, file_name: Optional[str]) -> bool:
@@ -604,8 +611,7 @@ class InstanceContainer(QObject, ContainerInterface, PluginObject):
         """
 
         serialized = cls._updateSerialized(serialized)  # Update to most recent version.
-        parser = configparser.ConfigParser(interpolation = None)
-        parser.read_string(serialized)
+        parser = FastConfigParser(serialized)
 
         metadata = {
             "id": container_id,

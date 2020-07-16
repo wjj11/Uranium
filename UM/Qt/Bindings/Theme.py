@@ -1,4 +1,4 @@
-# Copyright (c) 2018 Ultimaker B.V.
+# Copyright (c) 2020 Ultimaker B.V.
 # Uranium is released under the terms of the LGPLv3 or higher.
 
 import json
@@ -94,7 +94,7 @@ class Theme(QObject):
                             "id": theme_id,
                             "name": theme_name
                         })
-            except FileNotFoundError:
+            except EnvironmentError:
                 pass
         themes.sort(key = lambda k: k["name"])
 
@@ -165,6 +165,9 @@ class Theme(QObject):
         except UnicodeDecodeError:
             Logger.error("Theme file at {theme_full_path} is corrupt (invalid UTF-8 bytes).".format(theme_full_path = theme_full_path))
             return
+        except json.JSONDecodeError:
+            Logger.error("Theme file at {theme_full_path} is corrupt (invalid JSON syntax).".format(theme_full_path = theme_full_path))
+            return
 
         # Iteratively load inherited themes
         try:
@@ -177,7 +180,11 @@ class Theme(QObject):
 
         if "colors" in data:
             for name, color in data["colors"].items():
-                c = QColor(color[0], color[1], color[2], color[3])
+                try:
+                    c = QColor(color[0], color[1], color[2], color[3])
+                except IndexError:  # Color doesn't have enough components.
+                    Logger.log("w", "Colour {name} doesn't have enough components. Need to have 4, but had {num_components}.".format(name = name, num_components = len(color)))
+                    continue  # Skip this one then.
                 self._colors[name] = c
 
         fonts_dir = os.path.join(path, "fonts")

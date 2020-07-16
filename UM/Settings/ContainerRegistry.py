@@ -16,6 +16,7 @@ from UM.Logger import Logger
 from UM.MimeTypeDatabase import MimeType, MimeTypeDatabase
 from UM.PluginRegistry import PluginRegistry #To register the container type plug-ins and container provider plug-ins.
 from UM.Resources import Resources
+from UM.Settings.EmptyInstanceContainer import EmptyInstanceContainer
 from UM.Settings.ContainerFormatError import ContainerFormatError
 from UM.Settings.ContainerProvider import ContainerProvider
 from UM.Settings.constant_instance_containers import empty_container
@@ -441,12 +442,11 @@ class ContainerRegistry(ContainerRegistryInterface):
         if container_id in self.metadata:
             if container is None:
                 # We're in a bit of a weird state now. We want to notify the rest of the code that the container
-                # has been deleted, but due to lazy loading, it hasnt even been loaded yet. The issues is that in order
-                # to notify the rest of the code, we need to actually *have* the container. So we need to load it
-                # in order to remove it...
-                provider = self.source_provider.get(container_id)
-                if provider:
-                    container = provider.loadContainer(container_id)
+                # has been deleted, but due to lazy loading, it hasn't been loaded yet. The issues is that in order
+                # to notify the rest of the code, we need to actually *have* the container. So an empty instance 
+                # container is created, which is emitted with the containerRemoved signal and contains the metadata
+                container = EmptyInstanceContainer(container_id)
+                container.metaData = self.metadata[container_id]
             del self.metadata[container_id]
         if container_id in self.source_provider:
             if self.source_provider[container_id] is not None:
@@ -600,6 +600,7 @@ class ContainerRegistry(ContainerRegistryInterface):
             return
 
         provider.saveContainer(container) #type: ignore
+        container.setDirty(False)
         self.source_provider[container.getId()] = provider
 
     def saveDirtyContainers(self) -> None:
@@ -612,53 +613,6 @@ class ContainerRegistry(ContainerRegistryInterface):
 
             for stack in self.findContainerStacks():
                 self.saveContainer(stack)
-
-    # Load a binary cached version of a DefinitionContainer
-    def _loadCachedDefinition(self, definition_id: str, path: str) -> None:
-        try:
-            cache_path = Resources.getPath(Resources.Cache, "definitions", self._application.getVersion(), definition_id)
-
-            cache_mtime = os.path.getmtime(cache_path)
-            definition_mtime = os.path.getmtime(path)
-
-            if definition_mtime > cache_mtime:
-                # The definition is newer than the cached version, so ignore the cached version.
-                Logger.log("d", "Definition file %s is newer than cache, ignoring cached version", path)
-                return None
-
-            with open(cache_path, "rb") as f:
-                definition = pickle.load(f)
-
-            for file_path in definition.getInheritedFiles():
-                if os.path.getmtime(file_path) > cache_mtime:
-                    return None
-
-            return definition
-        except FileNotFoundError:
-            return None
-        except Exception as e:
-            # We could not load a cached version for some reason. Ignore it.
-            Logger.logException("d", "Could not load cached definition for {path}: {err}".format(path = path, err = str(e)))
-            return None
-
-    # Store a cached version of a DefinitionContainer
-    def _saveCachedDefinition(self, definition: DefinitionContainer):
-        cache_path = Resources.getStoragePath(Resources.Cache, "definitions", self._application.getVersion(), definition.id)
-
-        # Ensure the cache path exists
-        os.makedirs(os.path.dirname(cache_path), exist_ok = True)
-
-        try:
-            with open(cache_path, "wb") as f:
-                pickle.dump(definition, f, pickle.HIGHEST_PROTOCOL)
-        except RecursionError:
-            #Sometimes a recursion error in pickling occurs here.
-            #The cause is unknown. It must be some circular reference in the definition instances or definition containers.
-            #Instead of saving a partial cache and raising an exception, simply fail to save the cache.
-            #See CURA-4024.
-            Logger.log("w", "The definition cache for definition {definition_id} failed to pickle.".format(definition_id = definition.getId()))
-            if os.path.exists(cache_path):
-                os.remove(cache_path) #The pickling might be half-complete, which causes EOFError in Pickle when you load it later.
 
     # Clear the internal query cache
     def _clearQueryCache(self, *args: Any, **kwargs: Any) -> None:
