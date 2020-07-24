@@ -116,6 +116,7 @@ class LocalFileOutputDevice(OutputDevice):
         if selected_filter is not None:
             dialog.selectNameFilter(selected_filter)
 
+        # 上边的操作是弹出保存弹框，下边的操作是真正的保存操作
         if not dialog.exec_():
             raise OutputDeviceError.UserCanceledError()
 
@@ -128,6 +129,7 @@ class LocalFileOutputDevice(OutputDevice):
         # Get file name from file dialog
         file_name = dialog.selectedFiles()[0]
         Logger.log("d", "Writing to [%s]..." % file_name)
+        Application.getInstance().getPreferences().setValue("local_file/last_save_file", file_name)
 
         if os.path.exists(file_name):
             result = QMessageBox.question(None, catalog.i18nc("@title:window", "File Already Exists"), catalog.i18nc("@label Don't translate the XML tag <filename>!", "The file <filename>{0}</filename> already exists. Are you sure you want to overwrite it?").format(file_name))
